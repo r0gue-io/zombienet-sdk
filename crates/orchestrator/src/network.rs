@@ -77,8 +77,16 @@ impl<T: FileSystem> Network<T> {
         self.ns.name().to_string()
     }
 
+    pub fn base_dir(&self) -> Option<&str> {
+        self.ns.base_dir().to_str()
+    }
+
     pub fn relaychain(&self) -> &Relaychain {
         &self.relay
+    }
+
+    pub fn parachains(&self) -> Vec<&Parachain> {
+        self.parachains.values().collect()
     }
 
     // Teardown the network
@@ -539,9 +547,5 @@ impl<T: FileSystem> Network<T> {
 
     pub(crate) fn parachain(&self, para_id: u32) -> Option<&Parachain> {
         self.parachains.get(&para_id)
-    }
-
-    pub(crate) fn parachains(&self) -> Vec<&Parachain> {
-        self.parachains.values().collect()
     }
 }
