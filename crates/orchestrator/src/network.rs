@@ -85,10 +85,6 @@ impl<T: FileSystem> Network<T> {
         &self.relay
     }
 
-    pub fn parachains(&self) -> Vec<&Parachain> {
-        self.parachains.values().collect()
-    }
-
     // Teardown the network
     pub async fn destroy(self) -> Result<(), ProviderError> {
         self.ns.destroy().await
@@ -130,7 +126,7 @@ impl<T: FileSystem> Network<T> {
         let name = name.into();
         let relaychain = self.relaychain();
 
-        if self.nodes_by_name.contains_key(&name) {
+        if self.nodes_iter().any(|n| n.name == name) {
             return Err(anyhow::anyhow!("Name: {} is already used.", name));
         }
 
@@ -152,8 +148,15 @@ impl<T: FileSystem> Network<T> {
             default_args: self.initial_spec.relaychain.default_args.iter().collect(),
         };
 
-        let node_spec =
+        let mut node_spec =
             network_spec::node::NodeSpec::from_ad_hoc(&name, options.into(), &chain_context)?;
+
+        node_spec.available_args_output = Some(
+            self.initial_spec
+                .node_available_args_output(&node_spec, self.ns.clone())
+                .await?,
+        );
+
         let base_dir = self.ns.base_dir().to_string_lossy();
         let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
 
@@ -186,10 +189,8 @@ impl<T: FileSystem> Network<T> {
         //     // tx_helper::validator_actions::register(vec![&node], &running_node.ws_uri, None).await?;
         // }
 
-        // Add node to the global hash
+        // Add node to relaychain data
         self.add_running_node(node.clone(), None);
-        // add node to relay
-        self.relay.nodes.push(node);
 
         Ok(())
     }
@@ -298,8 +299,14 @@ impl<T: FileSystem> Network<T> {
             ));
         }
 
-        let node_spec =
+        let mut node_spec =
             network_spec::node::NodeSpec::from_ad_hoc(name.into(), options.into(), &chain_context)?;
+
+        node_spec.available_args_output = Some(
+            self.initial_spec
+                .node_available_args_output(&node_spec, self.ns.clone())
+                .await?,
+        );
 
         let node = spawner::spawn_node(&node_spec, global_files_to_inject, &ctx).await?;
         let para = self.parachains.get_mut(&para_id).unwrap();
@@ -495,14 +502,14 @@ impl<T: FileSystem> Network<T> {
     // remove_parachain()
 
     pub fn get_node(&self, name: impl Into<String>) -> Result<&NetworkNode, anyhow::Error> {
-        let name = &name.into();
-        if let Some(node) = self.nodes_by_name.get(name) {
+        let name = name.into();
+        if let Some(node) = self.nodes_iter().find(|&n| n.name == name) {
             return Ok(node);
         }
 
         let list = self
-            .nodes_by_name
-            .keys()
+            .nodes_iter()
+            .map(|n| &n.name)
             .cloned()
             .collect::<Vec<_>>()
             .join(", ");
@@ -510,6 +517,16 @@ impl<T: FileSystem> Network<T> {
         Err(anyhow::anyhow!(
             "can't find node with name: {name:?}, should be one of {list}"
         ))
+    }
+
+    pub fn get_node_mut(
+        &mut self,
+        name: impl Into<String>,
+    ) -> Result<&mut NetworkNode, anyhow::Error> {
+        let name = name.into();
+        self.nodes_iter_mut()
+            .find(|n| n.name == name)
+            .ok_or(anyhow::anyhow!("can't find node with name: {name:?}"))
     }
 
     pub fn nodes(&self) -> Vec<&NetworkNode> {
@@ -547,5 +564,24 @@ impl<T: FileSystem> Network<T> {
 
     pub(crate) fn parachain(&self, para_id: u32) -> Option<&Parachain> {
         self.parachains.get(&para_id)
+    }
+
+    pub fn parachains(&self) -> Vec<&Parachain> {
+        self.parachains.values().collect()
+    }
+
+    pub(crate) fn nodes_iter(&self) -> impl Iterator<Item = &NetworkNode> {
+        self.relay
+            .nodes
+            .iter()
+            .chain(self.parachains.values().flat_map(|p| &p.collators))
+    }
+
+    pub(crate) fn nodes_iter_mut(&mut self) -> impl Iterator<Item = &mut NetworkNode> {
+        self.relay.nodes.iter_mut().chain(
+            self.parachains
+                .iter_mut()
+                .flat_map(|(_, p)| &mut p.collators),
+        )
     }
 }
