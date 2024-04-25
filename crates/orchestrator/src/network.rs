@@ -85,10 +85,6 @@ impl<T: FileSystem> Network<T> {
         &self.relay
     }
 
-    pub fn parachains(&self) -> Vec<&Parachain> {
-        self.parachains.values().collect()
-    }
-
     // Teardown the network
     pub async fn destroy(self) -> Result<(), ProviderError> {
         self.ns.destroy().await
@@ -570,9 +566,9 @@ impl<T: FileSystem> Network<T> {
         self.parachains.get(&para_id)
     }
 
-    // pub(crate) fn parachains(&self) -> Vec<&Parachain> {
-    //     self.parachains.values().collect()
-    // }
+    pub fn parachains(&self) -> Vec<&Parachain> {
+        self.parachains.values().collect()
+    }
 
     pub(crate) fn nodes_iter(&self) -> impl Iterator<Item = &NetworkNode> {
         self.relay
